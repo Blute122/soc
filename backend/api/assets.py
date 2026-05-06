@@ -98,6 +98,40 @@ def asset_stats(db: Session = Depends(get_db), _user=Depends(get_current_user)):
     }
 
 
+@router.get("/{asset_id}/telemetry")
+def asset_telemetry(asset_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    alerts = db.query(Alert).filter(
+        (Alert.hostname == asset.hostname) | (Alert.source_ip == asset.ip_address) | (Alert.destination_ip == asset.ip_address)
+    ).order_by(desc(Alert.timestamp)).limit(25).all()
+    logs = db.query(Log).filter(
+        (Log.hostname == asset.hostname) | (Log.source_ip == asset.ip_address) | (Log.destination_ip == asset.ip_address)
+    ).order_by(desc(Log.timestamp)).limit(50).all()
+    return {
+        "asset": _format_asset(asset, db),
+        "alerts": [{
+            "id": alert.id,
+            "timestamp": str(alert.timestamp),
+            "title": alert.title,
+            "severity": alert.severity,
+            "status": alert.status,
+            "mitre_technique": alert.mitre_technique,
+            "rule_name": alert.rule_name,
+        } for alert in alerts],
+        "logs": [{
+            "id": log.id,
+            "timestamp": str(log.timestamp),
+            "source": log.source,
+            "event_type": log.event_type,
+            "severity": log.severity,
+            "raw_log": log.raw_log,
+            "mitre_technique": log.mitre_technique,
+        } for log in logs],
+    }
+
+
 def _format_asset(asset: Asset, db: Session):
     alert_count = db.query(func.count(Alert.id)).filter(
         (Alert.hostname == asset.hostname) | (Alert.source_ip == asset.ip_address) | (Alert.destination_ip == asset.ip_address)

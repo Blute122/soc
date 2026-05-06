@@ -46,17 +46,21 @@ export const getDashboardStats = () => api.get('/dashboard/stats');
 // Alerts
 export const getAlerts = (params?: any) => api.get('/alerts/', { params });
 export const getAlertStats = () => api.get('/alerts/stats');
+export const getAlertContext = (id: number) => api.get(`/alerts/${id}/context`);
 export const updateAlertStatus = (id: number, status: string) =>
   api.patch(`/alerts/${id}/status`, null, { params: { status } });
 export const createIncidentFromAlert = (id: number) => api.post(`/alerts/${id}/incident`);
 
 // Incidents
 export const getIncidents = (params?: any) => api.get('/incidents/', { params });
+export const getIncidentDetail = (id: number) => api.get(`/incidents/${id}`);
 export const createIncident = (data: any) => api.post('/incidents/', data);
 export const updateIncidentStatus = (id: number, status: string) =>
   api.patch(`/incidents/${id}/status`, null, { params: { status } });
 export const getIncidentNotes = (id: number) => api.get(`/incidents/${id}/notes`);
 export const addIncidentNote = (id: number, data: any) => api.post(`/incidents/${id}/notes`, data);
+export const addIncidentEvidence = (id: number, data: any) => api.post(`/incidents/${id}/evidence`, data);
+export const getIncidentTimeline = (id: number) => api.get(`/incidents/${id}/timeline`);
 export const getIncidentStats = () => api.get('/incidents/stats');
 
 // Assets
@@ -64,6 +68,7 @@ export const getAssets = (params?: any) => api.get('/assets/', { params });
 export const createAsset = (data: any) => api.post('/assets/', data);
 export const updateAsset = (id: number, data: any) => api.patch(`/assets/${id}`, data);
 export const getAssetStats = () => api.get('/assets/stats');
+export const getAssetTelemetry = (id: number) => api.get(`/assets/${id}/telemetry`);
 
 // Logs & Hunting
 export const getLogs = (params?: any) => api.get('/logs', { params });

@@ -1,4 +1,5 @@
 """Incidents API endpoints for IR workflow."""
+import json
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -6,7 +7,10 @@ from sqlalchemy import desc
 from pydantic import BaseModel
 from typing import Optional
 from backend.database.connection import get_db
+from backend.models.alert import Alert
+from backend.models.asset import Asset
 from backend.models.incident import Incident, IncidentNote
+from backend.models.log import Log
 from backend.models.user import User
 from backend.api.auth import get_current_user
 
@@ -28,6 +32,13 @@ class NoteCreate(BaseModel):
     note_type: str = "general"
 
 
+class EvidenceCreate(BaseModel):
+    title: str
+    evidence_type: str = "artifact"
+    value: str
+    description: Optional[str] = None
+
+
 @router.get("/")
 def get_incidents(status: Optional[str] = None, db: Session = Depends(get_db), _user=Depends(get_current_user)):
     q = db.query(Incident).order_by(desc(Incident.created_at))
@@ -35,6 +46,19 @@ def get_incidents(status: Optional[str] = None, db: Session = Depends(get_db), _
         q = q.filter(Incident.status == status)
     incidents = q.limit(200).all()
     return [_format_incident(i) for i in incidents]
+
+
+@router.get("/{incident_id}")
+def get_incident_detail(incident_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    payload = _format_incident(incident)
+    payload["notes"] = _get_notes_payload(incident_id, db)
+    payload["timeline"] = _get_timeline_payload(incident, db)
+    payload["alerts"] = [_format_alert(a) for a in db.query(Alert).filter(Alert.incident_id == incident_id).order_by(desc(Alert.timestamp)).all()]
+    payload["related_assets"] = _get_related_assets(incident, db)
+    return payload
 
 
 @router.post("/")
@@ -46,13 +70,20 @@ def create_incident(data: IncidentCreate, db: Session = Depends(get_db), user: U
         sla_deadline=datetime.now(timezone.utc) + timedelta(hours=sla_hours),
     )
     db.add(incident)
+    db.flush()
+    db.add(IncidentNote(
+        incident_id=incident.id,
+        author_id=user.id,
+        note_type="timeline",
+        content=f"Incident created with severity {data.severity}",
+    ))
     db.commit()
     db.refresh(incident)
     return _format_incident(incident)
 
 
 @router.patch("/{incident_id}/status")
-def update_status(incident_id: int, status: str, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+def update_status(incident_id: int, status: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -61,6 +92,12 @@ def update_status(incident_id: int, status: str, db: Session = Depends(get_db), 
         incident.resolved_at = datetime.now(timezone.utc)
     if status == "closed":
         incident.closed_at = datetime.now(timezone.utc)
+    db.add(IncidentNote(
+        incident_id=incident_id,
+        author_id=user.id,
+        note_type="timeline",
+        content=f"Status changed to {status}",
+    ))
     db.commit()
     return _format_incident(incident)
 
@@ -77,10 +114,44 @@ def add_note(incident_id: int, data: NoteCreate, db: Session = Depends(get_db), 
     return {"id": note.id, "content": note.content, "note_type": note.note_type, "created_at": str(note.created_at)}
 
 
+@router.post("/{incident_id}/evidence")
+def add_evidence(incident_id: int, data: EvidenceCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    evidence = _json_list(incident.evidence)
+    item = {
+        "id": len(evidence) + 1,
+        "title": data.title,
+        "type": data.evidence_type,
+        "value": data.value,
+        "description": data.description,
+        "added_by": user.id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    evidence.append(item)
+    incident.evidence = json.dumps(evidence)
+    db.add(IncidentNote(
+        incident_id=incident_id,
+        author_id=user.id,
+        note_type="evidence",
+        content=f"Evidence added: {data.title}",
+    ))
+    db.commit()
+    return item
+
+
 @router.get("/{incident_id}/notes")
 def get_notes(incident_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)):
-    notes = db.query(IncidentNote).filter(IncidentNote.incident_id == incident_id).order_by(IncidentNote.created_at).all()
-    return [{"id": n.id, "content": n.content, "note_type": n.note_type, "author_id": n.author_id, "created_at": str(n.created_at)} for n in notes]
+    return _get_notes_payload(incident_id, db)
+
+
+@router.get("/{incident_id}/timeline")
+def get_timeline(incident_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return _get_timeline_payload(incident, db)
 
 
 @router.get("/stats")
@@ -100,8 +171,87 @@ def _format_incident(i):
         "created_at": str(i.created_at), "updated_at": str(i.updated_at),
         "sla_deadline": str(i.sla_deadline) if i.sla_deadline else None,
         "resolved_at": str(i.resolved_at) if i.resolved_at else None,
-        "affected_assets": i.affected_assets,
-        "mitre_techniques": i.mitre_techniques,
-        "ioc_list": i.ioc_list,
+        "evidence": _json_list(i.evidence),
+        "affected_assets": _json_list(i.affected_assets),
+        "mitre_techniques": _json_list(i.mitre_techniques),
+        "ioc_list": _json_list(i.ioc_list),
         "alert_count": i.alert_count,
+    }
+
+
+def _json_list(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, json.JSONDecodeError):
+        return []
+
+
+def _get_notes_payload(incident_id: int, db: Session):
+    notes = db.query(IncidentNote).filter(IncidentNote.incident_id == incident_id).order_by(IncidentNote.created_at).all()
+    return [{"id": n.id, "content": n.content, "note_type": n.note_type, "author_id": n.author_id, "created_at": str(n.created_at)} for n in notes]
+
+
+def _get_timeline_payload(incident: Incident, db: Session):
+    events = [
+        {"type": "created", "title": "Incident created", "timestamp": str(incident.created_at), "detail": incident.title},
+    ]
+    for alert in db.query(Alert).filter(Alert.incident_id == incident.id).order_by(Alert.timestamp).all():
+        events.append({
+            "type": "alert",
+            "title": f"Alert attached: {alert.title}",
+            "timestamp": str(alert.timestamp),
+            "detail": alert.rule_name,
+            "severity": alert.severity,
+        })
+    for note in db.query(IncidentNote).filter(IncidentNote.incident_id == incident.id).order_by(IncidentNote.created_at).all():
+        events.append({
+            "type": note.note_type,
+            "title": note.content,
+            "timestamp": str(note.created_at),
+            "detail": f"Author #{note.author_id}",
+        })
+    if incident.resolved_at:
+        events.append({"type": "resolved", "title": "Incident resolved", "timestamp": str(incident.resolved_at), "detail": incident.resolution_summary})
+    if incident.closed_at:
+        events.append({"type": "closed", "title": "Incident closed", "timestamp": str(incident.closed_at), "detail": incident.resolution_summary})
+    return sorted(events, key=lambda item: item.get("timestamp") or "")
+
+
+def _get_related_assets(incident: Incident, db: Session):
+    identifiers = set(_json_list(incident.affected_assets) + _json_list(incident.ioc_list))
+    if not identifiers:
+        alerts = db.query(Alert).filter(Alert.incident_id == incident.id).all()
+        for alert in alerts:
+            identifiers.update(value for value in [alert.hostname, alert.source_ip, alert.destination_ip] if value)
+    assets = []
+    for asset in db.query(Asset).all():
+        if asset.hostname in identifiers or asset.ip_address in identifiers:
+            assets.append({
+                "id": asset.id,
+                "hostname": asset.hostname,
+                "ip_address": asset.ip_address,
+                "criticality": asset.criticality,
+                "risk_score": asset.risk_score,
+                "status": asset.status,
+            })
+    return assets
+
+
+def _format_alert(alert: Alert):
+    return {
+        "id": alert.id,
+        "title": alert.title,
+        "severity": alert.severity,
+        "status": alert.status,
+        "timestamp": str(alert.timestamp),
+        "source_ip": alert.source_ip,
+        "destination_ip": alert.destination_ip,
+        "hostname": alert.hostname,
+        "mitre_technique": alert.mitre_technique,
+        "rule_name": alert.rule_name,
     }

@@ -10,6 +10,7 @@ from typing import Optional
 from backend.database.connection import get_db
 from backend.models.alert import Alert
 from backend.models.incident import Incident, IncidentNote
+from backend.models.log import Log
 from backend.models.user import User
 from backend.api.auth import get_current_user
 
@@ -71,6 +72,51 @@ def get_alert_stats(db: Session = Depends(get_db), _user=Depends(get_current_use
     by_severity = dict(db.query(Alert.severity, func.count(Alert.id)).group_by(Alert.severity).all())
     by_status = dict(db.query(Alert.status, func.count(Alert.id)).group_by(Alert.status).all())
     return {"total": total, "by_severity": by_severity, "by_status": by_status}
+
+
+@router.get("/{alert_id}/context")
+def get_alert_context(alert_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    query = db.query(Log)
+    filters = []
+    if alert.hostname:
+        filters.append(Log.hostname == alert.hostname)
+    if alert.source_ip:
+        filters.append(Log.source_ip == alert.source_ip)
+    if alert.destination_ip:
+        filters.append(Log.destination_ip == alert.destination_ip)
+    if alert.mitre_technique:
+        filters.append(Log.mitre_technique.like(f"{alert.mitre_technique.split('.')[0]}%"))
+    if filters:
+        from sqlalchemy import or_
+        query = query.filter(or_(*filters))
+    logs = query.order_by(desc(Log.timestamp)).limit(75).all()
+    return {
+        "alert": {
+            "id": alert.id,
+            "title": alert.title,
+            "severity": alert.severity,
+            "status": alert.status,
+            "description": alert.description,
+            "mitre_technique": alert.mitre_technique,
+            "hostname": alert.hostname,
+            "source_ip": alert.source_ip,
+            "destination_ip": alert.destination_ip,
+        },
+        "related_logs": [{
+            "id": log.id,
+            "timestamp": str(log.timestamp),
+            "source": log.source,
+            "event_type": log.event_type,
+            "severity": log.severity,
+            "hostname": log.hostname,
+            "source_ip": log.source_ip,
+            "destination_ip": log.destination_ip,
+            "raw_log": log.raw_log,
+        } for log in logs],
+    }
 
 
 @router.patch("/{alert_id}/status")
