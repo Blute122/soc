@@ -11,6 +11,8 @@ type Stats = {
   severity_distribution: Record<string, number>;
   source_distribution: Record<string, number>;
   top_attackers: { ip: string; count: number }[];
+  total_assets?: number;
+  high_risk_assets?: number;
   eps?: number;
   ws_connections?: number;
 };
@@ -141,7 +143,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <div className="stat-card">
           <div className="stat-value">{(stats?.total_logs || 0).toLocaleString()}</div>
           <div className="stat-label">Total Events</div>
@@ -163,6 +165,12 @@ export default function DashboardPage() {
             {stats?.critical_alerts || 0}
           </div>
           <div className="stat-label">Critical</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value" style={{ background: 'linear-gradient(135deg, #10b981, #06b6d4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            {stats?.total_assets || 0}
+          </div>
+          <div className="stat-label">Assets / {stats?.high_risk_assets || 0} High Risk</div>
         </div>
       </div>
 

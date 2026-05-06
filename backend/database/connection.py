@@ -37,5 +37,5 @@ def get_db():
 
 def init_db():
     """Create all tables on startup."""
-    from backend.models import user, log, alert, incident, hunt_query, attack_simulation  # noqa: F401
+    from backend.models import user, log, alert, incident, hunt_query, attack_simulation, asset  # noqa: F401
     Base.metadata.create_all(bind=engine)

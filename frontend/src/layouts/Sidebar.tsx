@@ -2,13 +2,14 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 
 const NAV_ITEMS = [
-  { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { path: '/alerts', label: 'Alerts', icon: '🚨' },
-  { path: '/incidents', label: 'Incidents', icon: '📋' },
-  { path: '/logs', label: 'Log Stream', icon: '📜' },
-  { path: '/hunting', label: 'Threat Hunt', icon: '🔍' },
-  { path: '/simulations', label: 'Attack Sim', icon: '⚔️' },
-  { path: '/mitre', label: 'MITRE ATT&CK', icon: '🗺️' },
+  { path: '/dashboard', label: 'Dashboard', icon: 'DB' },
+  { path: '/alerts', label: 'Alerts', icon: 'AL' },
+  { path: '/incidents', label: 'Incidents', icon: 'IR' },
+  { path: '/assets', label: 'Assets', icon: 'AS' },
+  { path: '/logs', label: 'Log Stream', icon: 'LG' },
+  { path: '/hunting', label: 'Threat Hunt', icon: 'TH' },
+  { path: '/simulations', label: 'Attack Sim', icon: 'SIM' },
+  { path: '/mitre', label: 'MITRE ATT&CK', icon: 'MT' },
 ];
 
 export default function Sidebar() {
@@ -31,7 +32,6 @@ export default function Sidebar() {
 
   return (
     <aside className="flex flex-col h-full w-[240px] min-w-[240px] border-r border-[var(--border-color)] bg-[var(--bg-secondary)]">
-      {/* Logo */}
       <div className="p-5 border-b border-[var(--border-color)]">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
@@ -44,23 +44,19 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            className={({ isActive }) =>
-              `nav-item ${isActive ? 'active' : ''}`
-            }
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
           >
-            <span className="text-lg">{item.icon}</span>
+            <span className="w-7 text-center text-[10px] font-mono font-bold text-[var(--accent-cyan)]">{item.icon}</span>
             <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      {/* User info */}
       <div className="p-4 border-t border-[var(--border-color)]">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">

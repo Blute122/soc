@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { getAlerts, updateAlertStatus } from '../services/api';
+import { createIncidentFromAlert, getAlerts, updateAlertStatus } from '../services/api';
 import { useWebSocket } from '../websocket/useWebSocket';
 
 export default function AlertsPage() {
@@ -27,6 +27,12 @@ export default function AlertsPage() {
 
   const handleStatusChange = async (id: number, status: string) => {
     await updateAlertStatus(id, status);
+    loadAlerts();
+  };
+
+  const handleCreateIncident = async (id: number) => {
+    const res = await createIncidentFromAlert(id);
+    setSelected((prev: any) => prev ? { ...prev, incident_id: res.data.incident_id, status: 'investigating' } : prev);
     loadAlerts();
   };
 
@@ -130,6 +136,13 @@ export default function AlertsPage() {
               )}
               <div className="flex gap-2 mt-4">
                 <button onClick={() => handleStatusChange(selected.id, 'investigating')} className="btn-primary text-xs py-2 px-3">Investigate</button>
+                <button
+                  onClick={() => handleCreateIncident(selected.id)}
+                  disabled={!!selected.incident_id}
+                  className="btn-primary text-xs py-2 px-3 !bg-gradient-to-r !from-purple-600 !to-cyan-600 disabled:opacity-50"
+                >
+                  {selected.incident_id ? `INC-${selected.incident_id}` : 'Open Incident'}
+                </button>
                 <button onClick={() => handleStatusChange(selected.id, 'resolved')} className="btn-primary text-xs py-2 px-3 !bg-gradient-to-r !from-green-600 !to-emerald-600">Resolve</button>
                 <button onClick={() => handleStatusChange(selected.id, 'false_positive')} className="text-xs py-2 px-3 rounded-lg border border-[var(--border-color)] text-[var(--text-muted)] hover:border-[var(--text-muted)]">False +</button>
               </div>

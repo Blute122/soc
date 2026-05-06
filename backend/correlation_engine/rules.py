@@ -153,6 +153,64 @@ class LateralMovementRule(CorrelationRule):
         return None
 
 
+class PortScanRule(CorrelationRule):
+    """Network service discovery events -> reconnaissance alert."""
+    def __init__(self):
+        super().__init__(
+            "Port Scan Detected",
+            "Potential reconnaissance activity against internal assets",
+            "medium", "T1046",
+            "Identify scanning source, validate whether authorized, check for follow-on exploitation.",
+        )
+
+    def evaluate(self, log, context):
+        if log.get("event_type") != "port_scan":
+            return None
+        return {
+            "title": self.name,
+            "description": f"Port scan from {log.get('source_ip')} targeting {log.get('destination_ip')}",
+            "severity": self.severity,
+            "source_ip": log.get("source_ip"),
+            "destination_ip": log.get("destination_ip"),
+            "rule_name": self.name,
+            "mitre_tactic": self.mitre_tactic,
+            "mitre_technique": self.mitre_technique,
+            "mitre_technique_name": self.mitre_technique_name,
+            "recommended_action": self.recommended_action,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+
+class DnsExfiltrationRule(CorrelationRule):
+    """Suspicious DNS tunneling/exfiltration events -> exfiltration alert."""
+    def __init__(self):
+        super().__init__(
+            "DNS Exfiltration Suspected",
+            "DNS tunneling or exfiltration-like traffic identified",
+            "critical", "T1048",
+            "Block DNS channel, preserve packet evidence, identify data scope, and contain the source host.",
+        )
+
+    def evaluate(self, log, context):
+        dns_query = (log.get("dns_query") or "").lower()
+        raw_log = (log.get("raw_log") or "").lower()
+        if log.get("event_type") == "dns_query" and ("exfil" in dns_query or "exfiltration" in raw_log or "tunneling" in raw_log):
+            return {
+                "title": self.name,
+                "description": f"Suspicious DNS query from {log.get('source_ip')}: {log.get('dns_query')}",
+                "severity": self.severity,
+                "source_ip": log.get("source_ip"),
+                "destination_ip": log.get("destination_ip"),
+                "rule_name": self.name,
+                "mitre_tactic": self.mitre_tactic,
+                "mitre_technique": self.mitre_technique,
+                "mitre_technique_name": self.mitre_technique_name,
+                "recommended_action": self.recommended_action,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        return None
+
+
 class PhishingRule(CorrelationRule):
     """Phishing email detection → alert."""
     def __init__(self):
@@ -211,7 +269,8 @@ class CorrelationEngine:
     def __init__(self):
         self.rules = [
             BruteForceRule(), PowerShellObfuscationRule(), C2CommunicationRule(),
-            LateralMovementRule(), PhishingRule(), PrivilegeEscalationRule(),
+            LateralMovementRule(), PortScanRule(), DnsExfiltrationRule(),
+            PhishingRule(), PrivilegeEscalationRule(),
         ]
         self.context = defaultdict(int)
 

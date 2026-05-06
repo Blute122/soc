@@ -100,5 +100,8 @@ def _format_incident(i):
         "created_at": str(i.created_at), "updated_at": str(i.updated_at),
         "sla_deadline": str(i.sla_deadline) if i.sla_deadline else None,
         "resolved_at": str(i.resolved_at) if i.resolved_at else None,
+        "affected_assets": i.affected_assets,
+        "mitre_techniques": i.mitre_techniques,
+        "ioc_list": i.ioc_list,
         "alert_count": i.alert_count,
     }

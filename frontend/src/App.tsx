@@ -9,6 +9,7 @@ import HuntingPage from './pages/HuntingPage';
 import IncidentsPage from './pages/IncidentsPage';
 import SimulationsPage from './pages/SimulationsPage';
 import MitrePage from './pages/MitrePage';
+import AssetsPage from './pages/AssetsPage';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="/logs" element={<LogStreamPage />} />
             <Route path="/hunting" element={<HuntingPage />} />
             <Route path="/incidents" element={<IncidentsPage />} />
+            <Route path="/assets" element={<AssetsPage />} />
             <Route path="/simulations" element={<SimulationsPage />} />
             <Route path="/mitre" element={<MitrePage />} />
           </Route>

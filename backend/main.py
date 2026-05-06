@@ -13,6 +13,7 @@ from backend.database.connection import init_db, SessionLocal
 from backend.database.seed import seed_database
 from backend.models.log import Log
 from backend.models.alert import Alert
+from backend.models.asset import Asset
 from backend.websocket.manager import manager
 from backend.correlation_engine.rules import CorrelationEngine
 from backend.log_generators.windows import generate_windows_log
@@ -20,7 +21,7 @@ from backend.log_generators.linux import generate_linux_log
 from backend.log_generators.network import generate_network_log
 from backend.log_generators.email_gen import generate_email_log
 from backend.log_generators.cloud import generate_cloud_log
-from backend.api import auth, alerts, incidents, logs, simulations, mitre
+from backend.api import auth, alerts, incidents, logs, simulations, mitre, assets
 from backend.utils.records import coerce_datetime_fields
 
 # Correlation engine singleton
@@ -105,6 +106,8 @@ def _get_dashboard_stats() -> dict:
 
         severity_dist = dict(db.query(Alert.severity, func.count(Alert.id)).group_by(Alert.severity).all())
         source_dist = dict(db.query(Log.source, func.count(Log.id)).group_by(Log.source).all())
+        total_assets = db.query(func.count(Asset.id)).scalar() or 0
+        high_risk_assets = db.query(func.count(Asset.id)).filter(Asset.risk_score >= 70).scalar() or 0
 
         # Top attackers (source IPs with most malicious logs)
         top_attackers = db.query(
@@ -120,6 +123,8 @@ def _get_dashboard_stats() -> dict:
             "critical_alerts": critical_alerts,
             "severity_distribution": severity_dist,
             "source_distribution": source_dist,
+            "total_assets": total_assets,
+            "high_risk_assets": high_risk_assets,
             "top_attackers": [{"ip": ip, "count": cnt} for ip, cnt in top_attackers if ip],
         }
     finally:
@@ -164,6 +169,7 @@ app.include_router(incidents.router)
 app.include_router(logs.router)
 app.include_router(simulations.router)
 app.include_router(mitre.router)
+app.include_router(assets.router)
 
 
 # WebSocket endpoints
