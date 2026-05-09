@@ -262,6 +262,60 @@ class PrivilegeEscalationRule(CorrelationRule):
             }
         return None
 
+class AptKillchainRule(CorrelationRule):
+    """Multi-stage APT Killchain rule that maintains state over time."""
+    def __init__(self):
+        super().__init__(
+            "Advanced Persistent Threat (APT) Killchain Detected",
+            "Multi-stage attack sequence: External exploitation → Lateral Movement → Data Exfiltration.",
+            "critical", "T1190", # Primary initial access technique
+            "Declare P1 Incident immediately. Sever external connections to compromised DMZ hosts. Isolate Domain Controller.",
+        )
+
+    def evaluate(self, log, context):
+        ip = log.get("source_ip", "")
+        dest_ip = log.get("destination_ip", "")
+        event_type = log.get("event_type")
+        
+        # We track the killchain state globally
+        state_key = "apt_killchain_state"
+        
+        # Step 1: Initial Access (Exploit Log4Shell)
+        if event_type == "exploit_public_app" and "CVE-2021-44228" in log.get("raw_log", ""):
+            context[state_key] = {"stage": 1, "web_server": dest_ip, "timestamp": datetime.now(timezone.utc).isoformat()}
+            return None
+            
+        # Step 2: Lateral Movement from the compromised web server to the DC
+        if event_type == "lateral_movement" and context.get(state_key, {}).get("stage") == 1:
+            if ip == context[state_key].get("web_server"):
+                context[state_key]["stage"] = 2
+                context[state_key]["dc_ip"] = dest_ip
+                return None
+                
+        # Step 3: Exfiltration using multi-hop routing
+        if event_type == "multi_hop_exfil" and context.get(state_key, {}).get("stage") == 2:
+            if ip == context[state_key].get("web_server"):
+                # Trigger the massive multi-stage alert
+                alert = {
+                    "title": self.name,
+                    "description": f"Multi-stage Killchain: {ip} was exploited (Log4Shell), pivoted to DC ({context[state_key].get('dc_ip')}) via ZeroLogon, and exfiltrated data via Multi-Hop Tunnel.",
+                    "severity": self.severity,
+                    "source_ip": ip,
+                    "destination_ip": dest_ip,
+                    "rule_name": self.name,
+                    "mitre_tactic": "Multiple",
+                    "mitre_technique": "T1090.003",
+                    "mitre_technique_name": "Multi-hop Proxy",
+                    "recommended_action": self.recommended_action,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                
+                # Reset state after triggering
+                context[state_key] = {"stage": 0}
+                return alert
+
+        return None
+
 
 # Engine that runs all rules
 class CorrelationEngine:
@@ -270,7 +324,7 @@ class CorrelationEngine:
         self.rules = [
             BruteForceRule(), PowerShellObfuscationRule(), C2CommunicationRule(),
             LateralMovementRule(), PortScanRule(), DnsExfiltrationRule(),
-            PhishingRule(), PrivilegeEscalationRule(),
+            PhishingRule(), PrivilegeEscalationRule(), AptKillchainRule(), # <- Added here
         ]
         self.context = defaultdict(int)
 

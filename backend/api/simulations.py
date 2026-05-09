@@ -42,7 +42,7 @@ async def run_simulation(scenario_id: str, db: Session = Depends(get_db), _user=
     db.commit()
     db.refresh(sim)
 
-    logs = generate_simulation_logs(scenario_id)
+    logs = generate_simulation_logs(scenario_id, db)
 
     # Store logs and broadcast them
     from backend.models.log import Log
