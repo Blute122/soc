@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import ReactECharts from 'echarts-for-react';
 import {
   addIncidentEvidence,
   addIncidentNote,
@@ -33,7 +34,7 @@ const emptyEvidence = { title: '', evidence_type: 'ioc', value: '', description:
 export default function IncidentsPage() {
   const [incidents, setIncidents] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'evidence' | 'notes'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'evidence' | 'notes' | 'graph'>('overview');
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState('general');
   const [showCreate, setShowCreate] = useState(false);
@@ -42,12 +43,12 @@ export default function IncidentsPage() {
   const [, setUsers] = useState<any[]>([]);
 
   const loadIncidents = useCallback(() => {
-    getIncidents().then((r) => setIncidents(r.data)).catch(() => {});
+    getIncidents().then((r) => setIncidents(r.data)).catch(() => { });
   }, []);
 
   useEffect(() => {
     loadIncidents();
-    getUsers().then((r) => setUsers(r.data)).catch(() => {});
+    getUsers().then((r) => setUsers(r.data)).catch(() => { });
   }, [loadIncidents]);
 
   const selectIncident = async (inc: any) => {
@@ -188,9 +189,8 @@ export default function IncidentsPage() {
               <div className="flex flex-wrap gap-2">
                 {statuses.map((status) => (
                   <button key={status} onClick={() => handleStatus(status)}
-                    className={`text-[10px] font-mono px-3 py-1.5 rounded border transition-all ${
-                      selected.status === status ? 'border-[var(--accent-cyan)] text-[var(--accent-cyan)] bg-cyan-500/10' : 'border-[var(--border-color)] text-[var(--text-muted)] hover:text-white'
-                    }`}>
+                    className={`text-[10px] font-mono px-3 py-1.5 rounded border transition-all ${selected.status === status ? 'border-[var(--accent-cyan)] text-[var(--accent-cyan)] bg-cyan-500/10' : 'border-[var(--border-color)] text-[var(--text-muted)] hover:text-white'
+                      }`}>
                     {status.toUpperCase()}
                   </button>
                 ))}
@@ -198,13 +198,12 @@ export default function IncidentsPage() {
             </div>
 
             <div className="flex gap-4 border-b border-[var(--border-color)] pb-1 mb-4">
-              {(['overview', 'timeline', 'evidence', 'notes'] as const).map((tab) => (
+              {(['overview', 'graph', 'timeline', 'evidence', 'notes'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`text-sm font-medium pb-2 transition-all ${
-                    activeTab === tab ? 'text-[var(--accent-cyan)] border-b-2 border-[var(--accent-cyan)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                  }`}
+                  className={`text-sm font-medium pb-2 transition-all ${activeTab === tab ? 'text-[var(--accent-cyan)] border-b-2 border-[var(--accent-cyan)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                    }`}
                 >
                   {tab.toUpperCase()}
                 </button>
@@ -221,6 +220,7 @@ export default function IncidentsPage() {
                 onAdd={handleAddEvidence}
               />
             )}
+
             {activeTab === 'notes' && (
               <Notes
                 notes={selected.notes || []}
@@ -231,6 +231,8 @@ export default function IncidentsPage() {
                 onAdd={handleAddNote}
               />
             )}
+            {activeTab === 'graph' && <AttackGraph selected={selected} />}
+
           </div>
         ) : (
           <div className="glass-card p-8 text-center text-[var(--text-muted)] font-mono">
@@ -399,4 +401,100 @@ function getSlaState(deadline: string, status: string) {
   const hours = Math.floor(abs / 36e5);
   const minutes = Math.floor((abs % 36e5) / 6e4);
   return { breached, label: breached ? `Breached ${hours}h ${minutes}m` : `${hours}h ${minutes}m left` };
+}
+
+
+function AttackGraph({ selected }: { selected: any }) {
+  const graphOption = useMemo(() => {
+    // Generate nodes and links from alerts and timeline
+    const nodes: any[] = [];
+    const links: any[] = [];
+
+    // We'll create a simple logic based on alerts to build a simulated attack path
+    // In a real app, this would be constructed from detailed network flow or parent-child process data
+
+    // Attacker node (default assumption)
+    let attackerIp = "External Attacker";
+
+    // Look for initial access or exploit alerts to find attacker IP
+    const initialAlert = selected.alerts?.find((a: any) => a.mitre_tactic?.includes('Initial Access') || a.title?.includes('Killchain') || a.source_ip);
+    if (initialAlert && initialAlert.source_ip) {
+      attackerIp = initialAlert.source_ip;
+    }
+
+    nodes.push({ name: attackerIp, category: 0, symbolSize: 50, itemStyle: { color: '#ef4444' } });
+
+    // Look for assets involved
+    const assets = selected.related_assets || [];
+    assets.forEach((asset: any) => {
+      nodes.push({ name: asset.hostname || asset.ip_address, category: 1, symbolSize: 40, itemStyle: { color: '#06b6d4' } });
+      // Create link from attacker to first asset, or between assets based on lateral movement alerts
+    });
+
+    // Add logic to connect the nodes (simplified for demonstration based on the APT killchain)
+    if (selected.title.includes('APT') || selected.title.includes('Killchain')) {
+      const webSrv = assets.find((a: any) => a.hostname?.includes('WEB'))?.hostname || 'WEB-SRV01';
+      const dc = assets.find((a: any) => a.hostname?.includes('DC'))?.hostname || 'DC01';
+
+      if (!nodes.find(n => n.name === webSrv)) nodes.push({ name: webSrv, category: 1, symbolSize: 40, itemStyle: { color: '#06b6d4' } });
+      if (!nodes.find(n => n.name === dc)) nodes.push({ name: dc, category: 1, symbolSize: 40, itemStyle: { color: '#06b6d4' } });
+
+      links.push({ source: attackerIp, target: webSrv, label: { show: true, formatter: 'Initial Access (Log4Shell)' } });
+      links.push({ source: webSrv, target: dc, label: { show: true, formatter: 'Lateral Movement (ZeroLogon)' } });
+      links.push({ source: dc, target: attackerIp, label: { show: true, formatter: 'Data Exfiltration (Multi-hop)' }, lineStyle: { type: 'dashed' } });
+    } else {
+      // Generic connection for other incidents
+      assets.forEach((asset: any) => {
+        links.push({ source: attackerIp, target: asset.hostname || asset.ip_address, label: { show: true, formatter: 'Traffic' } });
+      });
+    }
+
+    return {
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: '#1a2235',
+        borderColor: '#1e3a5f',
+        textStyle: { color: '#e2e8f0' }
+      },
+      animationDurationUpdate: 1500,
+      animationEasingUpdate: 'quinticInOut',
+      series: [
+        {
+          type: 'graph',
+          layout: 'force',
+          force: {
+            repulsion: 1000,
+            edgeLength: [100, 200]
+          },
+          data: nodes.map(node => ({ ...node, label: { show: true, position: 'bottom', color: '#94a3b8' } })),
+          links: links.map(link => ({
+            ...link,
+            lineStyle: { color: '#334155', curveness: 0.2, width: 2 },
+            label: { color: '#64748b', fontSize: 10 }
+          })),
+          roam: true,
+          label: {
+            position: 'right',
+            formatter: '{b}'
+          },
+          lineStyle: {
+            color: 'source',
+            curveness: 0.3
+          },
+          emphasis: {
+            focus: 'adjacency',
+            lineStyle: {
+              width: 4
+            }
+          }
+        }
+      ]
+    };
+  }, [selected]);
+
+  return (
+    <div className="p-4 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] h-[400px]">
+      <ReactECharts option={graphOption} style={{ height: '100%', width: '100%' }} />
+    </div>
+  );
 }
