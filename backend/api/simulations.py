@@ -7,6 +7,7 @@ from backend.models.attack_simulation import AttackSimulation
 from backend.attack_simulator.scenarios import get_scenarios, get_scenario_detail, generate_simulation_logs
 from backend.api.auth import get_current_user
 from backend.utils.records import coerce_datetime_fields
+from backend.api.auth import get_current_user, require_roles
 
 router = APIRouter(prefix="/api/simulations", tags=["Attack Simulations"])
 
@@ -26,7 +27,7 @@ def scenario_detail(scenario_id: str, _user=Depends(get_current_user)):
 
 
 @router.post("/run/{scenario_id}")
-async def run_simulation(scenario_id: str, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+async def run_simulation(scenario_id: str, db: Session = Depends(get_db), _user=Depends(require_roles(['threat_hunter', 'admin']))):
     detail = get_scenario_detail(scenario_id)
     if not detail:
         from fastapi import HTTPException

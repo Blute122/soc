@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
+import { useAuth } from '../store/AuthContext';
 import { createAsset, getAssetStats, getAssets, updateAsset } from '../services/api';
 
 type Vulnerability = {
@@ -45,6 +46,8 @@ const emptyForm = {
 };
 
 export default function AssetsPage() {
+  const { user } = useAuth();
+  const canIsolate = user?.role === 'admin' || user?.role === 'incident_responder';
   const [assets, setAssets] = useState<Asset[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [selected, setSelected] = useState<Asset | null>(null);
@@ -229,8 +232,8 @@ export default function AssetsPage() {
                 <label className="text-xs text-[var(--text-muted)] font-mono mb-2 block">CONTAINMENT</label>
                 <div className="flex flex-wrap gap-2">
                   {['online', 'degraded', 'isolated', 'offline'].map((status) => (
-                    <button key={status} onClick={() => handleStatus(selected, status)}
-                      className={`text-[10px] font-mono px-2 py-1 rounded border ${selected.status === status ? 'border-[var(--accent-cyan)] text-[var(--accent-cyan)]' : 'border-[var(--border-color)] text-[var(--text-muted)]'}`}>
+                    <button key={status} onClick={() => handleStatus(selected, status)} disabled={!canIsolate} title={!canIsolate ? 'Only Incident Responders can change asset status' : ''}
+                      className={`text-[10px] font-mono px-2 py-1 rounded border ${!canIsolate ? 'opacity-50 cursor-not-allowed' : ''} ${selected.status === status ? 'border-[var(--accent-cyan)] text-[var(--accent-cyan)]' : 'border-[var(--border-color)] text-[var(--text-muted)]'}`}>
                       {status.toUpperCase()}
                     </button>
                   ))}

@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../store/AuthContext';
 import { getScenarios, getScenarioDetail, runSimulation, getSimulationHistory } from '../services/api';
 
 export default function SimulationsPage() {
+  const { user } = useAuth();
+  const canRunSim = user?.role === 'admin' || user?.role === 'threat_hunter';
   const [scenarios, setScenarios] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
@@ -10,8 +13,8 @@ export default function SimulationsPage() {
   const [result, setResult] = useState<any>(null);
 
   useEffect(() => {
-    getScenarios().then((r) => setScenarios(r.data)).catch(() => {});
-    getSimulationHistory().then((r) => setHistory(r.data)).catch(() => {});
+    getScenarios().then((r) => setScenarios(r.data)).catch(() => { });
+    getSimulationHistory().then((r) => setHistory(r.data)).catch(() => { });
   }, []);
 
   const selectScenario = async (s: any) => {
@@ -27,7 +30,7 @@ export default function SimulationsPage() {
     try {
       const res = await runSimulation(id);
       setResult(res.data);
-      getSimulationHistory().then((r) => setHistory(r.data)).catch(() => {});
+      getSimulationHistory().then((r) => setHistory(r.data)).catch(() => { });
     } finally {
       setRunning(null);
     }
@@ -36,6 +39,7 @@ export default function SimulationsPage() {
   const attackIcons: Record<string, string> = {
     brute_force: '🔓', phishing: '🎣', lateral_movement: '🔀',
     exfiltration: '📤', ransomware: '💀', command_and_control: '🖥️',
+    apt_campaign: '🕸️',
   };
 
   return (
@@ -78,9 +82,8 @@ export default function SimulationsPage() {
           <div className="space-y-2 max-h-[200px] overflow-y-auto">
             {history.map((h) => (
               <div key={h.id} className="flex items-center gap-3 p-3 glass-card text-sm">
-                <span className={`text-xs font-mono px-2 py-0.5 rounded ${
-                  h.status === 'completed' ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-400'
-                }`}>{h.status}</span>
+                <span className={`text-xs font-mono px-2 py-0.5 rounded ${h.status === 'completed' ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-400'
+                  }`}>{h.status}</span>
                 <span className="flex-1 truncate">{h.name}</span>
                 <span className="text-xs text-[var(--text-muted)] font-mono">{h.generated_logs} logs / {h.generated_alerts} alerts</span>
               </div>
@@ -119,8 +122,9 @@ export default function SimulationsPage() {
 
               <button
                 onClick={() => handleRun(selected.id)}
-                disabled={running === selected.id}
-                className="btn-danger w-full mt-4"
+                disabled={!canRunSim || running === selected.id}
+                title={!canRunSim ? 'Only Threat Hunters can run simulations' : ''}
+                className={`btn-primary w-full mt-4 flex items-center justify-center gap-2 ${!canRunSim ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {running === selected.id ? '⏳ Running Simulation...' : '▶ Execute Simulation'}
               </button>

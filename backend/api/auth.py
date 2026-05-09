@@ -65,6 +65,20 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
+def require_roles(allowed_roles: list[str]):
+    def role_checker(current_user: User = Depends(get_current_user)):
+        # Extract the role string from the Enum
+        user_role = current_user.role.value if isinstance(current_user.role, UserRole) else current_user.role
+        
+        # Admin always has bypass access
+        if user_role not in allowed_roles and user_role != "admin": 
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operation not permitted. Required roles: {', '.join(allowed_roles)}"
+            )
+        return current_user
+    return role_checker
+
 
 @router.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

@@ -13,6 +13,7 @@ from backend.models.alert import Alert
 from backend.models.asset import Asset
 from backend.models.vulnerability import Vulnerability
 from backend.models.log import Log
+from backend.api.auth import get_current_user, require_roles
 
 router = APIRouter(prefix="/api/assets", tags=["Assets"])
 
@@ -81,7 +82,7 @@ def create_asset(data: AssetCreate, db: Session = Depends(get_db), _user=Depends
 
 
 @router.patch("/{asset_id}")
-def update_asset(asset_id: int, data: AssetUpdate, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+def update_asset(asset_id: int, data: AssetUpdate, db: Session = Depends(get_db), _user=Depends(require_roles(['incident_responder', 'admin']))):
     asset = db.query(Asset).filter(Asset.id == asset_id).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
