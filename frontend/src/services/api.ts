@@ -21,7 +21,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('soc_token');
       localStorage.removeItem('soc_user');
-      window.location.href = '/login';
+      window.location.href = '/#/login';
     }
     return Promise.reject(err);
   }
@@ -90,3 +90,4 @@ export const getMitreTechniques = () => api.get('/mitre/techniques');
 export const getMitreTechniqueDetail = (id: string) => api.get(`/mitre/techniques/${id}`);
 
 export default api;
+export const enrichIncident = (id: number) => api.post(`/incidents/${id}/enrich`);

@@ -13,6 +13,8 @@ from backend.models.incident import Incident, IncidentNote
 from backend.models.log import Log
 from backend.models.user import User
 from backend.api.auth import get_current_user
+from backend.utils.threat_intel import analyze_ip
+from backend.api.auth import require_roles
 
 router = APIRouter(prefix="/api/incidents", tags=["Incidents"])
 
@@ -154,6 +156,56 @@ def get_timeline(incident_id: int, db: Session = Depends(get_db), _user=Depends(
     return _get_timeline_payload(incident, db)
 
 
+@router.post("/{incident_id}/enrich")
+def enrich_incident(incident_id: int, db: Session = Depends(get_db), _user=Depends(require_roles(['threat_hunter', 'incident_responder', 'admin']))):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    alerts = db.query(Alert).filter(Alert.incident_id == incident.id).all()
+    ips_to_check = set()
+    
+    for alert in alerts:
+        if alert.source_ip: ips_to_check.add(alert.source_ip)
+        if alert.destination_ip: ips_to_check.add(alert.destination_ip)
+
+    if incident.ioc_list:
+        try:
+            iocs = json.loads(incident.ioc_list)
+            for ioc in iocs:
+                if isinstance(ioc, str) and "." in ioc:
+                    ips_to_check.add(ioc)
+        except:
+            pass
+
+    results = []
+    evidence_added = 0
+    
+    import re
+    ip_pattern = re.compile(r'(?:[0-9]{1,3}\.){3}[0-9]{1,3}')
+    ips_to_check.update(ip_pattern.findall(incident.description))
+    ips_to_check.update(ip_pattern.findall(incident.title))
+
+    for ip in ips_to_check:
+        if ip and not (ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("127.")):
+            ti_data = analyze_ip(ip)
+            results.append(ti_data)
+
+            if ti_data["status"] in ["malicious", "suspicious"]:
+                note_content = f"**Threat Intel Automated Enrichment**\n**IP:** {ip}\n**Status:** {ti_data['status'].upper()}\n**Confidence:** {ti_data.get('confidence', 0)}%\n**Tags:** {', '.join(ti_data['tags'])}"
+                existing = db.query(IncidentNote).filter(
+                    IncidentNote.incident_id == incident.id,
+                    IncidentNote.content.contains(f"IP:** {ip}")
+                ).first()
+                if not existing:
+                    new_evidence = IncidentNote(incident_id=incident.id, author_id=_user.id, content=note_content, note_type="evidence")
+                    db.add(new_evidence)
+                    evidence_added += 1
+
+    db.commit()
+    return {"message": "Enrichment complete", "ips_checked": len(ips_to_check), "evidence_added": evidence_added, "findings": results}
+
+
 @router.get("/stats")
 def get_incident_stats(db: Session = Depends(get_db), _user=Depends(get_current_user)):
     from sqlalchemy import func
@@ -180,10 +232,8 @@ def _format_incident(i):
 
 
 def _json_list(value):
-    if not value:
-        return []
-    if isinstance(value, list):
-        return value
+    if not value: return []
+    if isinstance(value, list): return value
     try:
         parsed = json.loads(value)
         return parsed if isinstance(parsed, list) else []
@@ -202,18 +252,13 @@ def _get_timeline_payload(incident: Incident, db: Session):
     ]
     for alert in db.query(Alert).filter(Alert.incident_id == incident.id).order_by(Alert.timestamp).all():
         events.append({
-            "type": "alert",
-            "title": f"Alert attached: {alert.title}",
-            "timestamp": str(alert.timestamp),
-            "detail": alert.rule_name,
-            "severity": alert.severity,
+            "type": "alert", "title": f"Alert attached: {alert.title}",
+            "timestamp": str(alert.timestamp), "detail": alert.rule_name, "severity": alert.severity,
         })
     for note in db.query(IncidentNote).filter(IncidentNote.incident_id == incident.id).order_by(IncidentNote.created_at).all():
         events.append({
-            "type": note.note_type,
-            "title": note.content,
-            "timestamp": str(note.created_at),
-            "detail": f"Author #{note.author_id}",
+            "type": note.note_type, "title": note.content,
+            "timestamp": str(note.created_at), "detail": f"Author #{note.author_id}",
         })
     if incident.resolved_at:
         events.append({"type": "resolved", "title": "Incident resolved", "timestamp": str(incident.resolved_at), "detail": incident.resolution_summary})
@@ -232,26 +277,15 @@ def _get_related_assets(incident: Incident, db: Session):
     for asset in db.query(Asset).all():
         if asset.hostname in identifiers or asset.ip_address in identifiers:
             assets.append({
-                "id": asset.id,
-                "hostname": asset.hostname,
-                "ip_address": asset.ip_address,
-                "criticality": asset.criticality,
-                "risk_score": asset.risk_score,
-                "status": asset.status,
+                "id": asset.id, "hostname": asset.hostname, "ip_address": asset.ip_address,
+                "criticality": asset.criticality, "risk_score": asset.risk_score, "status": asset.status,
             })
     return assets
 
 
 def _format_alert(alert: Alert):
     return {
-        "id": alert.id,
-        "title": alert.title,
-        "severity": alert.severity,
-        "status": alert.status,
-        "timestamp": str(alert.timestamp),
-        "source_ip": alert.source_ip,
-        "destination_ip": alert.destination_ip,
-        "hostname": alert.hostname,
-        "mitre_technique": alert.mitre_technique,
-        "rule_name": alert.rule_name,
+        "id": alert.id, "title": alert.title, "severity": alert.severity, "status": alert.status,
+        "timestamp": str(alert.timestamp), "source_ip": alert.source_ip, "destination_ip": alert.destination_ip,
+        "hostname": alert.hostname, "mitre_technique": alert.mitre_technique, "rule_name": alert.rule_name,
     }

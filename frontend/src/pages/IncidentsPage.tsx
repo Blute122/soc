@@ -9,6 +9,7 @@ import {
   getIncidents,
   getUsers,
   updateIncidentStatus,
+  enrichIncident,
 } from '../services/api';
 
 const statuses = ['open', 'investigating', 'contained', 'resolved', 'closed'];
@@ -40,6 +41,7 @@ export default function IncidentsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyIncident);
   const [evidenceForm, setEvidenceForm] = useState(emptyEvidence);
+  const [enriching, setEnriching] = useState(false);
   const [, setUsers] = useState<any[]>([]);
 
   const loadIncidents = useCallback(() => {
@@ -69,6 +71,18 @@ export default function IncidentsPage() {
     setShowCreate(false);
     setForm(emptyIncident);
     loadIncidents();
+  };
+
+  const handleEnrich = async () => {
+    if (!selected) return;
+    setEnriching(true);
+    try {
+      await enrichIncident(selected.id);
+      await refreshSelected();
+      setActiveTab('notes');
+    } finally {
+      setEnriching(false);
+    }
   };
 
   const handleStatus = async (status: string) => {
@@ -182,6 +196,13 @@ export default function IncidentsPage() {
                   <p className={`text-sm font-bold ${sla.breached ? 'text-red-400' : 'text-[var(--accent-cyan)]'}`}>{sla.label}</p>
                 </div>
               )}
+              <button
+                onClick={handleEnrich}
+                disabled={enriching}
+                className={`text-xs px-3 py-1.5 rounded flex items-center gap-2 font-mono transition-all ${enriching ? 'opacity-50 cursor-not-allowed bg-[var(--bg-input)]' : 'bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20'}`}
+              >
+                {enriching ? '⏳ ENRICHING...' : '🔍 ENRICH IOCs'}
+              </button>
             </div>
 
             <div className="mb-4">
@@ -220,7 +241,6 @@ export default function IncidentsPage() {
                 onAdd={handleAddEvidence}
               />
             )}
-
             {activeTab === 'notes' && (
               <Notes
                 notes={selected.notes || []}
@@ -232,7 +252,6 @@ export default function IncidentsPage() {
               />
             )}
             {activeTab === 'graph' && <AttackGraph selected={selected} />}
-
           </div>
         ) : (
           <div className="glass-card p-8 text-center text-[var(--text-muted)] font-mono">
@@ -351,7 +370,7 @@ function Notes({ notes, newNote, setNewNote, noteType, setNoteType, onAdd }: any
               <span className="text-[10px] font-mono text-[var(--accent-cyan)]">{note.note_type}</span>
               <span className="text-[10px] text-[var(--text-muted)] font-mono">{note.created_at ? new Date(note.created_at).toLocaleString() : ''}</span>
             </div>
-            <p className="text-sm text-[var(--text-secondary)] mt-1">{note.content}</p>
+            <p className="text-sm text-[var(--text-secondary)] mt-1 whitespace-pre-wrap">{note.content}</p>
           </div>
         ))}
         {notes.length === 0 && <Empty text="No notes yet." />}
@@ -378,7 +397,8 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function TagList({ values, color }: { values: string[]; color: string }) {
-  return values.length ? (
+  // Using optional chaining (values?.length) prevents the crash if values is undefined.
+  return values?.length ? (
     <div className="flex flex-wrap gap-2">
       {values.map((value) => (
         <span key={value} className={`text-xs font-mono px-2 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)] ${color}`}>{value}</span>
@@ -403,20 +423,13 @@ function getSlaState(deadline: string, status: string) {
   return { breached, label: breached ? `Breached ${hours}h ${minutes}m` : `${hours}h ${minutes}m left` };
 }
 
-
 function AttackGraph({ selected }: { selected: any }) {
   const graphOption = useMemo(() => {
-    // Generate nodes and links from alerts and timeline
     const nodes: any[] = [];
     const links: any[] = [];
 
-    // We'll create a simple logic based on alerts to build a simulated attack path
-    // In a real app, this would be constructed from detailed network flow or parent-child process data
-
-    // Attacker node (default assumption)
     let attackerIp = "External Attacker";
 
-    // Look for initial access or exploit alerts to find attacker IP
     const initialAlert = selected.alerts?.find((a: any) => a.mitre_tactic?.includes('Initial Access') || a.title?.includes('Killchain') || a.source_ip);
     if (initialAlert && initialAlert.source_ip) {
       attackerIp = initialAlert.source_ip;
@@ -424,26 +437,22 @@ function AttackGraph({ selected }: { selected: any }) {
 
     nodes.push({ name: attackerIp, category: 0, symbolSize: 50, itemStyle: { color: '#ef4444' } });
 
-    // Look for assets involved
     const assets = selected.related_assets || [];
     assets.forEach((asset: any) => {
       nodes.push({ name: asset.hostname || asset.ip_address, category: 1, symbolSize: 40, itemStyle: { color: '#06b6d4' } });
-      // Create link from attacker to first asset, or between assets based on lateral movement alerts
     });
 
-    // Add logic to connect the nodes (simplified for demonstration based on the APT killchain)
     if (selected.title.includes('APT') || selected.title.includes('Killchain')) {
       const webSrv = assets.find((a: any) => a.hostname?.includes('WEB'))?.hostname || 'WEB-SRV01';
       const dc = assets.find((a: any) => a.hostname?.includes('DC'))?.hostname || 'DC01';
 
-      if (!nodes.find(n => n.name === webSrv)) nodes.push({ name: webSrv, category: 1, symbolSize: 40, itemStyle: { color: '#06b6d4' } });
-      if (!nodes.find(n => n.name === dc)) nodes.push({ name: dc, category: 1, symbolSize: 40, itemStyle: { color: '#06b6d4' } });
+      if (!nodes.find((n: any) => n.name === webSrv)) nodes.push({ name: webSrv, category: 1, symbolSize: 40, itemStyle: { color: '#06b6d4' } });
+      if (!nodes.find((n: any) => n.name === dc)) nodes.push({ name: dc, category: 1, symbolSize: 40, itemStyle: { color: '#06b6d4' } });
 
       links.push({ source: attackerIp, target: webSrv, label: { show: true, formatter: 'Initial Access (Log4Shell)' } });
       links.push({ source: webSrv, target: dc, label: { show: true, formatter: 'Lateral Movement (ZeroLogon)' } });
-      links.push({ source: dc, target: attackerIp, label: { show: true, formatter: 'Data Exfiltration (Multi-hop)' }, lineStyle: { type: 'dashed' } });
+      links.push({ source: dc, target: attackerIp, label: { show: true, formatter: 'Data Exfiltration (Multi-hop)' }, lineStyle: { type: 'dashed' as any } });
     } else {
-      // Generic connection for other incidents
       assets.forEach((asset: any) => {
         links.push({ source: attackerIp, target: asset.hostname || asset.ip_address, label: { show: true, formatter: 'Traffic' } });
       });
@@ -456,15 +465,15 @@ function AttackGraph({ selected }: { selected: any }) {
         borderColor: '#1e3a5f',
         textStyle: { color: '#e2e8f0' }
       },
-      animationDurationUpdate: 1500,
-      animationEasingUpdate: 'quinticInOut',
+      animation: false, // Prevents the screen from flickering black and white
       series: [
         {
           type: 'graph',
           layout: 'force',
           force: {
             repulsion: 1000,
-            edgeLength: [100, 200]
+            edgeLength: [100, 200],
+            layoutAnimation: false // Stops continuous physics re-renders
           },
           data: nodes.map(node => ({ ...node, label: { show: true, position: 'bottom', color: '#94a3b8' } })),
           links: links.map(link => ({
